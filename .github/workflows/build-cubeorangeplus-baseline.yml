@@ -1,0 +1,85 @@
+# First check: compile the unchanged official Copter-4.6.3 release.
+# This workflow does not add RPLIDAR S2 support.
+name: Build CubeOrangePlus - 4.6.3 baseline
+
+on:
+  push:
+    branches:
+      - copter-4.6.3-rplidar-s2
+    paths:
+      - .github/workflows/build-cubeorangeplus-baseline.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      DO_AP_STM_ENV: '1'
+      SKIP_AP_GRAPHIC_ENV: '1'
+      SKIP_AP_COV_ENV: '1'
+      SKIP_AP_EXT_ENV: '1'
+      SKIP_AP_COMPLETION_ENV: '1'
+      SKIP_AP_GIT_CHECK: '1'
+
+    steps:
+      - name: Get the exact official 4.6.3 source
+        uses: actions/checkout@v7
+        with:
+          ref: 92b0cd788ec29406f26c6f9c31d5ceedbd1cc538
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install ArduPilot build tools
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          Tools/environment_install/install-prereqs-ubuntu.sh -y 2>&1 | tee prerequisites.log
+
+      - name: Compile ArduCopter for Cube Orange Plus
+        run: |
+          export PATH="/opt/gcc-arm-none-eabi-10-2020-q4-major/bin:$HOME/.local/bin:$PATH"
+          ./waf configure --board CubeOrangePlus 2>&1 | tee configure.log
+          ./waf copter -j2 2>&1 | tee build.log
+
+      - name: Check and package the firmware
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          firmware = Path('build/CubeOrangePlus/bin/arducopter.apj')
+          data = json.loads(firmware.read_text())
+          if data.get('board_id') != 1063:
+              raise SystemExit('Unexpected board ID; expected CubeOrangePlus (1063)')
+          print('Firmware board ID verified: 1063 (CubeOrangePlus)')
+          PY
+          mkdir -p firmware-output
+          cp build/CubeOrangePlus/bin/arducopter.apj firmware-output/
+          cp build/CubeOrangePlus/bin/arducopter.elf firmware-output/
+          git rev-parse HEAD > firmware-output/source-commit.txt
+          printf '%s\n' 'Official ArduCopter 4.6.3 baseline; RPLIDAR S2 support has not been added.' > firmware-output/README.txt
+          sha256sum firmware-output/arducopter.apj > firmware-output/sha256.txt
+
+      - name: Save firmware for download
+        uses: actions/upload-artifact@v7
+        with:
+          name: CubeOrangePlus-Copter-4.6.3-baseline
+          path: firmware-output/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Save build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: CubeOrangePlus-baseline-logs
+          path: |
+            prerequisites.log
+            configure.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
