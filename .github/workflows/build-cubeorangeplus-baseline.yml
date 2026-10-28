@@ -59,7 +59,7 @@ jobs:
           PY
           mkdir -p firmware-output
           cp build/CubeOrangePlus/bin/arducopter.apj firmware-output/
-          cp build/CubeOrangePlus/bin/arducopter.elf firmware-output/
+          cp build/CubeOrangePlus/bin/arducopter firmware-output/arducopter.elf
           git rev-parse HEAD > firmware-output/source-commit.txt
           printf '%s\n' 'Official ArduCopter 4.6.3 baseline; RPLIDAR S2 support has not been added.' > firmware-output/README.txt
           sha256sum firmware-output/arducopter.apj > firmware-output/sha256.txt
