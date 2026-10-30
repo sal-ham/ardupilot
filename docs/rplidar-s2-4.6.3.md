@@ -149,5 +149,6 @@ replace the UART, clock and proximity/backend environment, covering scan
 startup, checksum rejection, fragmented/noisy reception, descriptor handover,
 full-scan sector updates, a 30-degree front mask, obstacle retreat/removal,
 encoder-reset flags, variable angular spacing, range rejection, mounting
-correction, timeout, bounded reception, A2 compatibility and Express disabled.
+correction, timeout, bounded reception, serial-read error recovery, A2
+compatibility and Express disabled.
 It is not a complete SITL or flight-controller test.

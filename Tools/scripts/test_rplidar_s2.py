@@ -44,6 +44,7 @@ namespace AP_InternalError { enum class error_t { flow_of_control }; }
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <sys/types.h>
 #include <vector>
 #define PACKED __attribute__((packed))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -62,8 +63,10 @@ class UARTDriver {
 public:
     std::deque<uint8_t> rx;
     std::vector<uint8_t> tx;
+    bool fail_read = false;
     uint32_t available() const { return static_cast<uint32_t>(rx.size()); }
-    uint16_t read(uint8_t *dst, uint16_t count) {
+    ssize_t read(uint8_t *dst, uint16_t count) {
+        if (fail_read) { return -1; }
         uint16_t n = std::min<uint16_t>(count, static_cast<uint16_t>(rx.size()));
         for (uint16_t i = 0; i < n; ++i) { dst[i] = rx.front(); rx.pop_front(); }
         return n;
@@ -266,6 +269,18 @@ static void receive_budget() {
     check(r.frontend.uart.rx.empty(),"bounded processing cannot drain a queued stream");
     check(fixture_errors==0,"receive budget internal error");
 }
+static void serial_read_error() {
+    Rig r; r.s2();
+    r.frontend.uart.fail_read=true;
+    r.inject(dense(0,4000));
+    check(r.frontend.uart.rx.size()==84 && r.frontend.database.empty(),"failed serial read consumed data");
+    r.frontend.uart.fail_read=false;
+    r.driver.update();
+    r.inject(dense(4.5f,4000));
+    check(r.frontend.uart.rx.empty() && !r.frontend.database.empty(),"serial read error damaged the receive buffer");
+    check(near(r.frontend.database.front().distance,4),"serial read recovery produced a wrong distance");
+    check(fixture_errors==0,"serial read error internal error");
+}
 #else
 static void s2_disabled() {
     Rig r; r.identify(0x71);
@@ -282,6 +297,7 @@ int main(int argc,char **argv) {
         {"fragmented_and_corrupt_stream",fragmented_and_corrupt_stream},
         {"orientation_and_timeout",orientation_and_timeout}, {"invalid_ranges",invalid_ranges},
         {"split_descriptor_and_capsule",split_descriptor_and_capsule}, {"receive_budget",receive_budget},
+        {"serial_read_error",serial_read_error},
 #else
         {"s2_disabled",s2_disabled},
 #endif

@@ -672,8 +672,8 @@ void AP_Proximity_RPLidarA2::handle_express_data()
             break;
         }
 
-        const uint16_t n = _uart->read(_express_stream + _express_stream_len, to_read);
-        if (n == 0) {
+        const ssize_t n = _uart->read(_express_stream + _express_stream_len, to_read);
+        if (n <= 0) {
             break;
         }
 
