@@ -1,0 +1,136 @@
+name: Build CubeOrangePlus - 4.6.3 S2
+
+on:
+  push:
+    branches:
+      - copter-4.6.3-rplidar-s2
+    paths:
+      - libraries/AP_Proximity/**
+      - ArduCopter/version.h
+      - Tools/scripts/test_rplidar_s2.py
+      - .github/workflows/build-cubeorangeplus-s2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cubeorangeplus-s2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      DO_AP_STM_ENV: '1'
+      SKIP_AP_GRAPHIC_ENV: '1'
+      SKIP_AP_COV_ENV: '1'
+      SKIP_AP_EXT_ENV: '1'
+      SKIP_AP_COMPLETION_ENV: '1'
+      SKIP_AP_GIT_CHECK: '1'
+
+    steps:
+      # Checkout the triggering commit, including the backport, rather than
+      # the fixed release SHA used by the separate baseline workflow.
+      - name: Get the modified source and submodules
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Exercise the actual driver with synthetic UART packets
+        run: |
+          python3 Tools/scripts/test_rplidar_s2.py --root . --cxx g++ 2>&1 | tee driver-tests.log
+
+      - name: Install ArduPilot build tools
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          Tools/environment_install/install-prereqs-ubuntu.sh -y 2>&1 | tee prerequisites.log
+
+      - name: Compile the S2 firmware for Cube Orange Plus
+        run: |
+          export PATH="/opt/gcc-arm-none-eabi-10-2020-q4-major/bin:$HOME/.local/bin:$PATH"
+          cat > s2-extra-hwdef.dat <<'HWDEF'
+          define AP_PROXIMITY_RPLIDARA2_ENABLED 1
+          define AP_PROXIMITY_RPLIDAR_EXPRESSSCAN_ENABLED 1
+          HWDEF
+          ./waf configure --board CubeOrangePlus --extra-hwdef s2-extra-hwdef.dat 2>&1 | tee configure.log
+          ./waf copter -j2 2>&1 | tee build.log
+
+      - name: Check board, build flags, and package the firmware
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          firmware = Path('build/CubeOrangePlus/bin/arducopter.apj')
+          data = json.loads(firmware.read_text())
+          if data.get('board_id') != 1063:
+              raise SystemExit('Wrong board ID; expected CubeOrangePlus (1063)')
+          hwdef = Path('build/CubeOrangePlus/hwdef.h').read_text()
+          for flag in ('AP_PROXIMITY_RPLIDARA2_ENABLED', 'AP_PROXIMITY_RPLIDAR_EXPRESSSCAN_ENABLED'):
+              if not re.search(r'^#define\s+' + flag + r'\s+1\s*$', hwdef, re.MULTILINE):
+                  raise SystemExit('Missing required build flag: ' + flag)
+          version = Path('ArduCopter/version.h').read_text()
+          if '#define THISFIRMWARE "ArduCopter V4.6.3-S2"' not in version:
+              raise SystemExit('Missing custom S2 version label')
+          output = Path('firmware-output')
+          output.mkdir(exist_ok=True)
+          manifest = {
+              'firmware': 'ArduCopter V4.6.3-S2',
+              'board': 'CubeOrangePlus', 'board_id': data['board_id'],
+              'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'base_release': 'Copter-4.6.3',
+              'base_commit': '92b0cd788ec29406f26c6f9c31d5ceedbd1cc538',
+              'upstream_s2_commit': 'b0070b303eaafd8dfa6b2022171a87c1ed62bf1c',
+              'express_scan_enabled': True,
+          }
+          (output/'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          print('Verified CubeOrangePlus board ID and both S2 build flags')
+          PY
+          cp build/CubeOrangePlus/bin/arducopter.apj firmware-output/
+          cp build/CubeOrangePlus/bin/arducopter firmware-output/arducopter.elf
+          cp s2-extra-hwdef.dat firmware-output/
+          cp docs/rplidar-s2-4.6.3.md firmware-output/README.md
+          sha256sum firmware-output/arducopter.apj firmware-output/arducopter.elf > firmware-output/sha256.txt
+
+      - name: Save S2 firmware for download
+        uses: actions/upload-artifact@v7
+        with:
+          name: CubeOrangePlus-Copter-4.6.3-S2
+          path: firmware-output/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish failure details
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ('driver-tests.log', 'prerequisites.log', 'configure.log', 'build.log'):
+              path = Path(name)
+              if path.exists():
+                  tail = '\n'.join(path.read_text(errors='replace').splitlines()[-35:])
+                  escaped = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::error title={name} (last 35 lines)::{escaped}')
+          PY
+
+      - name: Save validation and build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: CubeOrangePlus-S2-logs
+          path: |
+            driver-tests.log
+            prerequisites.log
+            configure.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 30
