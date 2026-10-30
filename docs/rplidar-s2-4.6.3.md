@@ -67,6 +67,13 @@ Push to `copter-4.6.3-rplidar-s2` and follow **Build CubeOrangePlus - 4.6.3 S2**
 in GitHub Actions. This workflow checks out the triggering commit. The older
 baseline workflow intentionally checks out the fixed official release instead.
 
+The original upstream workflows are preserved in `.github/upstream-workflows/`
+on this branch so a sensor-driver push does not start the entire upstream CI
+suite. Only the S2 workflow and the saved baseline workflow remain active.
+If GitHub says workflows are paused on this fork because of Actions usage,
+the repository owner must re-enable them on the Actions page before pushing
+the next commit.
+
 The S2 workflow runs the packet tests, uses the 4.6.3 dependency installer and
 ARM GCC toolchain, and builds `CubeOrangePlus`. It explicitly enables both
 RPLIDAR build flags. Before upload, it checks board ID **1063**, those flags,

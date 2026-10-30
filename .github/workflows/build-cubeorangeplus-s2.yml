@@ -1,4 +1,5 @@
 name: Build CubeOrangePlus - 4.6.3 S2
+# This branch keeps inherited broad CI in .github/upstream-workflows/.
 
 on:
   push:
